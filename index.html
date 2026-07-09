@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Ship It — A Game for Runway</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; font-family: 'VT323', monospace;
+    overflow: hidden;
+  }
+  #container {
+    position: relative; width: 800px; max-width: 100vw;
+    aspect-ratio: 16/10; max-height: 100vh;
+  }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  #skip {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); color: #ff6b6b;
+    border: 2px solid #ff6b6b; padding: 6px 14px;
+    font-family: 'Press Start 2P', monospace; font-size: 10px;
+    cursor: pointer; z-index: 10; border-radius: 4px;
+  }
+  #skip:hover { background: #ff6b6b; color: #fff; }
+  #mobile-controls {
+    display: none; position: absolute; bottom: 10px; left: 0; right: 0;
+    justify-content: center; gap: 8px; z-index: 10;
+  }
+  .ctrl-btn {
+    width: 56px; height: 56px; background: rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.3); border-radius: 10px;
+    font-size: 24px; color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  .ctrl-btn:active { background: rgba(255,255,255,0.3); }
+  @media (max-width: 800px), (hover: none) {
+    #mobile-controls { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="container">
+  <canvas id="game"></canvas>
+  <button id="skip" onclick="skipToPortfolio()">SKIP ▸</button>
+  <div id="mobile-controls">
+    <button class="ctrl-btn" ontouchstart="keys.left=true" ontouchend="keys.left=false" onmousedown="keys.left=true" onmouseup="keys.left=false">◀</button>
+    <button class="ctrl-btn" ontouchstart="keys.up=true" ontouchend="keys.up=false" onmousedown="keys.up=true" onmouseup="keys.up=false">▲</button>
+    <button class="ctrl-btn" ontouchstart="keys.down=true" ontouchend="keys.down=false" onmousedown="keys.down=true" onmouseup="keys.down=false">▼</button>
+    <button class="ctrl-btn" ontouchstart="keys.right=true" ontouchend="keys.right=false" onmousedown="keys.right=true" onmouseup="keys.right=false">▶</button>
+  </div>
+</div>
+
+<script>
+// ── Game State ──
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 500;
+canvas.width = W; canvas.height = H;
+
+const keys = { left: false, right: false, up: false, down: false };
+window.keys = keys;
+
+let gameState = 'title'; // title, playing, win, portfolio
+let score = 0;
+const TARGET = 12; // collect 12 commits to ship
+let player = { x: W/2, y: H-80, w: 28, h: 36, vx: 0, vy: 0, onGround: false };
+let commits = [];
+let enemies = [];
+let particles = [];
+let frameCount = 0;
+let timer = 0;
+let screenShake = 0;
+let skipBtn = document.getElementById('skip');
+
+// ── Input ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.up = true;
+  if (e.key === 'ArrowDown' || e.key === 's') keys.down = true;
+  e.preventDefault();
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.up = false;
+  if (e.key === 'ArrowDown' || e.key === 's') keys.down = false;
+});
+
+// ── Sprites (16-bit style — drawn programmatically) ──
+function drawPlayer(x, y) {
+  ctx.save();
+  // Body
+  ctx.fillStyle = '#4ecdc4';
+  ctx.fillRect(x-10, y-24, 20, 20);
+  // Head
+  ctx.fillStyle = '#ffe66d';
+  ctx.fillRect(x-7, y-32, 14, 12);
+  // Eyes
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(x-4, y-30, 3, 3);
+  ctx.fillRect(x+2, y-30, 3, 3);
+  // Laptop (tool)
+  ctx.fillStyle = '#333';
+  ctx.fillRect(x-5, y-8, 10, 8);
+  ctx.fillStyle = '#4ecdc4';
+  ctx.fillRect(x-3, y-6, 6, 4);
+  ctx.restore();
+}
+
+function drawCommit(x, y) {
+  ctx.save();
+  // Hexagon commit icon
+  ctx.fillStyle = '#2ecc71';
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    let angle = Math.PI/6 + (Math.PI/3)*i;
+    ctx.lineTo(x + Math.cos(angle)*10, y + Math.sin(angle)*10);
+  }
+  ctx.closePath(); ctx.fill();
+  // Checkmark
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x-4, y); ctx.lineTo(x-1, y+3); ctx.lineTo(x+4, y-3);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMergeConflict(x, y) {
+  ctx.save();
+  let bob = Math.sin(frameCount * 0.1) * 2;
+  ctx.fillStyle = '#ff6b6b';
+  // Spiky body
+  ctx.beginPath();
+  ctx.moveTo(x, y-14+bob);
+  ctx.lineTo(x+12, y-4+bob);
+  ctx.lineTo(x+8, y+10+bob);
+  ctx.lineTo(x-8, y+10+bob);
+  ctx.lineTo(x-12, y-4+bob);
+  ctx.closePath(); ctx.fill();
+  // Eyes
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x-5, y-2+bob, 5, 5);
+  ctx.fillRect(x+1, y-2+bob, 5, 5);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(x-3, y+bob, 2, 3);
+  ctx.fillRect(x+3, y+bob, 2, 3);
+  // <<< marks
+  ctx.fillStyle = '#ff9999';
+  ctx.font = '8px monospace'; ctx.fillText('<<<', x-14, y+4);
+  ctx.restore();
+}
+
+function drawBrokenBuild(x, y) {
+  ctx.save();
+  ctx.fillStyle = '#e74c3c';
+  // Blocky broken build
+  ctx.fillRect(x-10, y-12, 20, 18);
+  ctx.fillRect(x-6, y+6, 12, 6);
+  // X eyes
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x-6, y-9, 5, 5);
+  ctx.fillRect(x+2, y-9, 5, 5);
+  ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x-6, y-9); ctx.lineTo(x-1, y-4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-1, y-9); ctx.lineTo(x-6, y-4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+2, y-9); ctx.lineTo(x+7, y-4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+7, y-9); ctx.lineTo(x+2, y-4); ctx.stroke();
+  // ❌
+  ctx.fillStyle = '#c0392b';
+  ctx.font = '10px monospace'; ctx.fillText('❌', x+12, y-10);
+  ctx.restore();
+}
+
+// ── Background ──
+function drawBackground() {
+  // Sky gradient
+  let grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#16213e');
+  grad.addColorStop(0.5, '#1a1a2e');
+  grad.addColorStop(1, '#0f3460');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 40; i++) {
+    let sx = (i * 197 + 53) % W;
+    let sy = (i * 149 + 31) % (H*0.6);
+    let alpha = 0.3 + Math.sin(frameCount*0.02 + i)*0.3;
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Ground (server rack floor)
+  ctx.fillStyle = '#2c2c3e';
+  ctx.fillRect(0, H-50, W, 50);
+  ctx.fillStyle = '#3d3d5c';
+  for (let x = 0; x < W; x += 40) {
+    ctx.fillRect(x, H-50, 30, 3);
+    ctx.fillRect(x+2, H-34, 26, 2);
+    ctx.fillRect(x, H-18, 30, 3);
+  }
+  // Blinking server lights
+  for (let x = 10; x < W; x += 40) {
+    ctx.fillStyle = frameCount%60 < 30 ? '#2ecc71' : '#e74c3c';
+    ctx.fillRect(x+4, H-46, 3, 3);
+    ctx.fillStyle = frameCount%40 < 20 ? '#3498db' : '#f39c12';
+    ctx.fillRect(x+12, H-46, 3, 3);
+    ctx.fillStyle = frameCount%50 < 25 ? '#2ecc71' : '#e74c3c';
+    ctx.fillRect(x+20, H-46, 3, 3);
+  }
+
+  // CI/CD pipeline pipes
+  ctx.strokeStyle = 'rgba(78,205,196,0.15)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, H-80); ctx.lineTo(200, H-120); ctx.lineTo(400, H-100);
+  ctx.lineTo(600, H-130); ctx.lineTo(W, H-90);
+  ctx.stroke();
+  // Arrow heads
+  let pipeY = H-80 + Math.sin(frameCount*0.03)*3;
+  for (let px = 0; px < W; px += 80) {
+    ctx.fillStyle = 'rgba(78,205,196,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(px, pipeY-4); ctx.lineTo(px+8, pipeY); ctx.lineTo(px, pipeY+4);
+    ctx.fill();
+  }
+}
+
+// ── Spawn logic ──
+function spawnCommit() {
+  commits.push({ x: 40 + Math.random()*(W-80), y: H-100 - Math.random()*300, collected: false, bob: Math.random()*Math.PI*2 });
+  for (let i = 0; i < 6; i++) {
+    particles.push({ x: Math.random()*W, y: Math.random()*H/2, life: 15, vx: 0, vy: -0.5, color: '#2ecc71' });
+  }
+}
+
+function spawnEnemy() {
+  let type = Math.random() < 0.55 ? 'conflict' : 'build';
+  enemies.push({
+    x: Math.random() < 0.5 ? -20 : W+20,
+    y: H-80 - Math.random()*200,
+    type, vx: (Math.random() < 0.5 ? -2 : 2) * (0.8 + Math.random()*0.8),
+    vy: 0, w: 24, h: 24
+  });
+}
+
+// ── Collision ──
+function rectCollide(a, b) {
+  return Math.abs(a.x - b.x) < (a.w + b.w)/2 && Math.abs(a.y - b.y) < (a.h + b.h)/2;
+}
+
+// ── Update ──
+function update() {
+  if (gameState !== 'playing') return;
+  frameCount++; timer++;
+
+  // Player movement
+  if (keys.left) player.vx = -4;
+  else if (keys.right) player.vx = 4;
+  else player.vx *= 0.8;
+
+  player.x += player.vx;
+  player.vy += 0.5; // gravity
+  player.y += player.vy;
+
+  // Ground collision
+  if (player.y > H-62) { player.y = H-62; player.vy = 0; player.onGround = true; }
+  else player.onGround = false;
+
+  // Jump
+  if (keys.up && player.onGround) { player.vy = -10; keys.up = false; }
+
+  // Screen bounds
+  if (player.x < 16) player.x = 16;
+  if (player.x > W-16) player.x = W-16;
+  if (player.y < 20) { player.y = 20; player.vy = 0; }
+
+  // Collect commits
+  commits = commits.filter(c => {
+    if (!c.collected && rectCollide(player, {x: c.x, y: c.y + Math.sin(frameCount*0.05 + c.bob)*3, w: 20, h: 20})) {
+      c.collected = true; score++;
+      for (let i = 0; i < 8; i++) {
+        particles.push({ x: c.x, y: c.y, life: 20, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3-2, color: '#2ecc71' });
+      }
+      if (score >= TARGET) {
+        gameState = 'win';
+        setTimeout(() => { gameState = 'portfolio'; }, 1500);
+      }
+      return false;
+    }
+    return !c.collected;
+  });
+
+  // Enemy movement
+  enemies.forEach(e => {
+    e.x += e.vx;
+    e.y += e.vy;
+    if (e.x < -30 || e.x > W+30) e.vx *= -1;
+    e.vy += 0.3;
+    if (e.y > H-70) { e.y = H-70; e.vy = -6; }
+  });
+
+  // Enemy collision
+  for (let e of enemies) {
+    if (rectCollide(player, e)) {
+      screenShake = 15;
+      score = Math.max(0, score - 2);
+      // Knock player back
+      player.vx = (player.x > e.x ? 5 : -5);
+      player.vy = -6;
+      // Remove enemy
+      enemies = enemies.filter(en => en !== e);
+      for (let i = 0; i < 10; i++) {
+        particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, color: '#ff6b6b' });
+      }
+      break;
+    }
+  }
+
+  // Particles
+  particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.life--; return p.life > 0; });
+
+  // Spawn timer
+  if (frameCount % 90 === 0 && commits.length < 4) spawnCommit();
+  if (frameCount % 120 === 50 && enemies.length < 5) spawnEnemy();
+
+  if (screenShake > 0) screenShake--;
+}
+
+// ── Draw ──
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (gameState === 'title') return drawTitle();
+  if (gameState === 'portfolio') return drawPortfolio();
+  if (gameState === 'win') return drawWin();
+
+  let shakeX = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
+  let shakeY = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  drawBackground();
+
+  // Draw commits
+  commits.forEach(c => drawCommit(c.x, c.y + Math.sin(frameCount*0.05 + c.bob)*3));
+
+  // Draw enemies
+  enemies.forEach(e => {
+    if (e.type === 'conflict') drawMergeConflict(e.x, e.y);
+    else drawBrokenBuild(e.x, e.y);
+  });
+
+  // Draw particles
+  particles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life/20;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    ctx.globalAlpha = 1;
+  });
+
+  drawPlayer(player.x, player.y);
+  ctx.restore();
+
+  // HUD
+  ctx.fillStyle = '#fff';
+  ctx.font = '16px "VT323", monospace';
+  ctx.fillText(`COMMITS: ${score}/${TARGET}`, 16, 30);
+  ctx.fillText(`TIME: ${Math.floor(timer/60)}s`, W-120, 30);
+
+  // Progress bar
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(16, 40, 200, 12);
+  ctx.fillStyle = '#2ecc71';
+  ctx.fillRect(16, 40, 200 * (score/TARGET), 12);
+  ctx.strokeStyle = '#4ecdc4';
+  ctx.strokeRect(16, 40, 200, 12);
+
+  // Shipping label
+  ctx.fillStyle = '#4ecdc4';
+  ctx.font = '12px "Press Start 2P", monospace';
+  ctx.fillText('SHIP TO: PRODUCTION', W-260, 30);
+}
+
+// ── Title Screen ──
+function drawTitle() {
+  drawBackground();
+  // Overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#4ecdc4';
+  ctx.font = '28px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHIP IT', W/2, 130);
+
+  // Subtitle
+  ctx.fillStyle = '#ffe66d';
+  ctx.font = '14px "Press Start 2P", monospace';
+  ctx.fillText('A DevOps Adventure', W/2, 170);
+
+  // Instructions
+  ctx.fillStyle = '#ccc';
+  ctx.font = '18px "VT323", monospace';
+  ctx.fillText('Collect 12 clean commits to deploy to production.', W/2, 230);
+  ctx.fillText('Dodge merge conflicts and broken builds!', W/2, 255);
+  ctx.fillText('Arrow keys / WASD to move. ↑ to jump.', W/2, 290);
+
+  // For Runway
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = '16px "VT323", monospace';
+  ctx.fillText('Built for Runway — 60 seconds to play. 🚀', W/2, 340);
+
+  // Start prompt (pulsing)
+  let alpha = 0.5 + Math.sin(frameCount*0.05)*0.5;
+  ctx.fillStyle = `rgba(78,205,196,${alpha})`;
+  ctx.font = '20px "Press Start 2P", monospace';
+  ctx.fillText('PRESS ENTER OR TAP TO START', W/2, 420);
+  ctx.textAlign = 'start';
+}
+
+// ── Win Screen ──
+function drawWin() {
+  drawBackground();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#2ecc71';
+  ctx.font = '32px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHIPPED! 🚀', W/2, 200);
+
+  ctx.fillStyle = '#ffe66d';
+  ctx.font = '16px "VT323", monospace';
+  ctx.fillText('v1.0.0 deployed to production', W/2, 250);
+  ctx.fillText('Loading portfolio...', W/2, 280);
+  ctx.textAlign = 'start';
+}
+
+// ── Portfolio Terminal ──
+function drawPortfolio() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Terminal header
+  ctx.fillStyle = '#333';
+  ctx.fillRect(0, 0, W, 28);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.beginPath(); ctx.arc(20, 14, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f39c12';
+  ctx.beginPath(); ctx.arc(40, 14, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2ecc71';
+  ctx.beginPath(); ctx.arc(60, 14, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ccc';
+  ctx.font = '12px "VT323", monospace';
+  ctx.fillText('portfolio — bash — 80×24', 80, 20);
+
+  // Typewriter text
+  let lines = [
+    '$ whoami',
+    'Chris Lund — Builder. Carpenter. AI Developer.',
+    '',
+    '$ ls ~/shipped/',
+    '60+ open-source CLI tools | 1 AI marketplace | 1 MCP server',
+    'Zero dependencies. Pure Python stdlib.',
+    '',
+    '$ cat why-runway.md',
+    'I built Hermtica — an AI agent marketplace — on your competitors stack.',
+    'I know CI/CD because I live it. 60 tools shipped in 2 weeks.',
+    'I debug pipelines at 3am. I read build logs for fun.',
+    'I want to help Runway make mobile releases boring.',
+    '',
+    '$ cat experience.txt',
+    '▸ Self-taught developer (JS/TS/Python — Next.js, React, Node)',
+    '▸ Built & shipped: hermtica.com, repcheck-mu.vercel.app',
+    '▸ Carpentry foreman → construction-tech domain expert',
+    '▸ Restaurant manager → hospitality-tech domain expert',
+    '▸ Pursuing CompTIA Security+ (exam ready in 8 weeks)',
+    '',
+    '$ echo "Let\'s talk."',
+    'github.com/realMNohgee | hermtica.com',
+    'chris@hermtica.com',
+    '',
+    '█'
+  ];
+
+  ctx.fillStyle = '#2ecc71';
+  ctx.font = '15px "VT323", monospace';
+  let startY = 40;
+  for (let i = 0; i < lines.length; i++) {
+    let y = startY + i * 20;
+    if (y > H-10) break;
+    if (lines[i].startsWith('$')) ctx.fillStyle = '#4ecdc4';
+    else if (lines[i].startsWith('▸')) ctx.fillStyle = '#ffe66d';
+    else if (lines[i] === '█') {
+      let blink = frameCount % 60 < 30;
+      ctx.fillStyle = '#2ecc71';
+      if (blink) ctx.fillText('█', 2, y);
+      continue;
+    }
+    else ctx.fillStyle = '#2ecc71';
+    ctx.fillText(lines[i], 8, y);
+  }
+}
+
+// ── Skip ──
+function skipToPortfolio() {
+  gameState = 'portfolio';
+  skipBtn.style.display = 'none';
+}
+window.skipToPortfolio = skipToPortfolio;
+
+// ── Game Loop ──
+function gameLoop() {
+  update();
+  draw();
+
+  // Start game on enter or click
+  if (gameState === 'title') {
+    canvas.style.cursor = 'pointer';
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Click/tap to start
+canvas.addEventListener('click', () => {
+  if (gameState === 'title') startGame();
+});
+document.addEventListener('keydown', function startHandler(e) {
+  if (e.key === 'Enter' && gameState === 'title') { startGame(); document.removeEventListener('keydown', startHandler); }
+});
+
+function startGame() {
+  gameState = 'playing';
+  score = 0; timer = 0; frameCount = 0;
+  commits = []; enemies = []; particles = [];
+  player = { x: W/2, y: H-80, w: 28, h: 36, vx: 0, vy: 0, onGround: false };
+  spawnCommit(); spawnCommit();
+  canvas.style.cursor = 'default';
+}
+
+// Initial spawn
+spawnCommit(); spawnCommit();
+
+gameLoop();
+</script>
+</body>
+</html>
