@@ -68,7 +68,10 @@ window.keys = keys;
 
 let gameState = 'title'; // title, playing, win, portfolio
 let score = 0;
-const TARGET = 12; // collect 12 commits to ship
+const TARGET = 12;
+let lives = 3;
+const MAX_LIVES = 3;
+let invincible = 0;
 let player = { x: W/2, y: H-80, w: 28, h: 36, vx: 0, vy: 0, onGround: false };
 let commits = [];
 let enemies = [];
@@ -237,7 +240,7 @@ function drawBackground() {
 
 // ── Spawn logic ──
 function spawnCommit() {
-  commits.push({ x: 40 + Math.random()*(W-80), y: H-100 - Math.random()*300, collected: false, bob: Math.random()*Math.PI*2 });
+  commits.push({ x: 40 + Math.random()*(W-80), y: H-130 - Math.random()*150, collected: false, bob: Math.random()*Math.PI*2 });
   for (let i = 0; i < 6; i++) {
     particles.push({ x: Math.random()*W, y: Math.random()*H/2, life: 15, vx: 0, vy: -0.5, color: '#2ecc71' });
   }
@@ -310,21 +313,29 @@ function update() {
   });
 
   // Enemy collision
-  for (let e of enemies) {
-    if (rectCollide(player, e)) {
-      screenShake = 15;
-      score = Math.max(0, score - 2);
-      // Knock player back
-      player.vx = (player.x > e.x ? 5 : -5);
-      player.vy = -6;
-      // Remove enemy
-      enemies = enemies.filter(en => en !== e);
-      for (let i = 0; i < 10; i++) {
-        particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, color: '#ff6b6b' });
+  if (invincible <= 0) {
+    for (let e of enemies) {
+      if (rectCollide(player, e)) {
+        screenShake = 15;
+        lives--;
+        invincible = 60; // 1 second of invincibility
+        if (lives <= 0) {
+          gameState = 'gameover';
+          return;
+        }
+        // Knock player back
+        player.vx = (player.x > e.x ? 6 : -6);
+        player.vy = -8;
+        // Remove enemy
+        enemies = enemies.filter(en => en !== e);
+        for (let i = 0; i < 10; i++) {
+          particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, color: '#ff6b6b' });
+        }
+        break;
       }
-      break;
     }
   }
+  if (invincible > 0) invincible--;
 
   // Particles
   particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.life--; return p.life > 0; });
@@ -343,6 +354,7 @@ function draw() {
   if (gameState === 'title') return drawTitle();
   if (gameState === 'portfolio') return drawPortfolio();
   if (gameState === 'win') return drawWin();
+  if (gameState === 'gameover') return drawGameOver();
 
   let shakeX = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
   let shakeY = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
@@ -368,27 +380,42 @@ function draw() {
     ctx.globalAlpha = 1;
   });
 
+  if (invincible > 0 && Math.floor(invincible/4) % 2 === 0) {
+    ctx.globalAlpha = 0.4;
+  }
   drawPlayer(player.x, player.y);
+  ctx.globalAlpha = 1;
   ctx.restore();
 
   // HUD
   ctx.fillStyle = '#fff';
   ctx.font = '16px "VT323", monospace';
-  ctx.fillText(`COMMITS: ${score}/${TARGET}`, 16, 30);
+  ctx.fillText(`BUILDS: ${score}/${TARGET}`, 16, 30);
+
+  // Lives
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = '18px "VT323", monospace';
+  let hearts = '';
+  for (let i = 0; i < lives; i++) hearts += '♥ ';
+  ctx.fillText(hearts, 16, 56);
+
+  // Timer
+  ctx.fillStyle = '#ccc';
+  ctx.font = '16px "VT323", monospace';
   ctx.fillText(`TIME: ${Math.floor(timer/60)}s`, W-120, 30);
 
   // Progress bar
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(16, 40, 200, 12);
+  ctx.fillRect(16, 64, 200, 12);
   ctx.fillStyle = '#2ecc71';
-  ctx.fillRect(16, 40, 200 * (score/TARGET), 12);
+  ctx.fillRect(16, 64, 200 * (score/TARGET), 12);
   ctx.strokeStyle = '#4ecdc4';
-  ctx.strokeRect(16, 40, 200, 12);
+  ctx.strokeRect(16, 64, 200, 12);
 
   // Shipping label
   ctx.fillStyle = '#4ecdc4';
-  ctx.font = '12px "Press Start 2P", monospace';
-  ctx.fillText('SHIP TO: PRODUCTION', W-260, 30);
+  ctx.font = '10px "Press Start 2P", monospace';
+  ctx.fillText('🏗️ MOBILE RELEASE PIPELINE', W-300, 30);
 }
 
 // ── Title Screen ──
@@ -402,24 +429,28 @@ function drawTitle() {
   ctx.fillStyle = '#4ecdc4';
   ctx.font = '28px "Press Start 2P", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('SHIP IT', W/2, 130);
+  ctx.fillText('SHIP IT', W/2, 120);
+
+  // Runway tag
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = '12px "Press Start 2P", monospace';
+  ctx.fillText('A MOBILE RELEASE ADVENTURE', W/2, 155);
 
   // Subtitle
   ctx.fillStyle = '#ffe66d';
-  ctx.font = '14px "Press Start 2P", monospace';
-  ctx.fillText('A DevOps Adventure', W/2, 170);
+  ctx.font = '18px "VT323", monospace';
+  ctx.fillText('Can you ship a build before the bugs take you out?', W/2, 200);
 
   // Instructions
   ctx.fillStyle = '#ccc';
   ctx.font = '18px "VT323", monospace';
-  ctx.fillText('Collect 12 clean commits to deploy to production.', W/2, 230);
-  ctx.fillText('Dodge merge conflicts and broken builds!', W/2, 255);
-  ctx.fillText('Arrow keys / WASD to move. ↑ to jump.', W/2, 290);
+  ctx.fillText('Collect 12 green builds. Dodge merge conflicts & crashes.', W/2, 245);
+  ctx.fillText('You have 3 lives. Arrow keys / WASD. ↑ to jump.', W/2, 270);
 
   // For Runway
-  ctx.fillStyle = '#ff6b6b';
+  ctx.fillStyle = '#4ecdc4';
   ctx.font = '16px "VT323", monospace';
-  ctx.fillText('Built for Runway — 60 seconds to play. 🚀', W/2, 340);
+  ctx.fillText('Runway automates mobile releases. This is you shipping one. 🚀', W/2, 320);
 
   // Start prompt (pulsing)
   let alpha = 0.5 + Math.sin(frameCount*0.05)*0.5;
@@ -436,13 +467,13 @@ function drawWin() {
   ctx.fillRect(0, 0, W, H);
 
   ctx.fillStyle = '#2ecc71';
-  ctx.font = '32px "Press Start 2P", monospace';
+  ctx.font = '28px "Press Start 2P", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('SHIPPED! 🚀', W/2, 200);
+  ctx.fillText('🚀 SHIPPED TO PRODUCTION!', W/2, 200);
 
   ctx.fillStyle = '#ffe66d';
   ctx.font = '16px "VT323", monospace';
-  ctx.fillText('v1.0.0 deployed to production', W/2, 250);
+  ctx.fillText('v2.4.1 deployed — zero crashes, zero rollbacks', W/2, 250);
   ctx.fillText('Loading portfolio...', W/2, 280);
   ctx.textAlign = 'start';
 }
@@ -513,6 +544,35 @@ function drawPortfolio() {
   }
 }
 
+// ── Game Over ──
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = '32px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('BUILD FAILED', W/2, 180);
+
+  ctx.fillStyle = '#ccc';
+  ctx.font = '20px "VT323", monospace';
+  ctx.fillText(`You shipped ${score}/${TARGET} builds before the bugs got you.`, W/2, 230);
+  ctx.fillText('Even the best pipelines have crashes.', W/2, 260);
+
+  let alpha = 0.5 + Math.sin(frameCount*0.05)*0.5;
+  ctx.fillStyle = `rgba(78,205,196,${alpha})`;
+  ctx.font = '18px "Press Start 2P", monospace';
+  ctx.fillText('PRESS ENTER TO RETRY', W/2, 330);
+  ctx.textAlign = 'start';
+}
+
+// Add game over restart
+document.addEventListener('keydown', function retryHandler(e) {
+  if (e.key === 'Enter' && gameState === 'gameover') {
+    startGame();
+  }
+});
+
 // ── Skip ──
 function skipToPortfolio() {
   gameState = 'portfolio';
@@ -543,7 +603,7 @@ document.addEventListener('keydown', function startHandler(e) {
 
 function startGame() {
   gameState = 'playing';
-  score = 0; timer = 0; frameCount = 0;
+  score = 0; lives = 3; timer = 0; frameCount = 0; invincible = 0;
   commits = []; enemies = []; particles = [];
   player = { x: W/2, y: H-80, w: 28, h: 36, vx: 0, vy: 0, onGround: false };
   spawnCommit(); spawnCommit();
