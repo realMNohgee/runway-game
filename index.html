@@ -316,20 +316,31 @@ function update() {
   if (invincible <= 0) {
     for (let e of enemies) {
       if (rectCollide(player, e)) {
-        screenShake = 15;
-        lives--;
-        invincible = 60; // 1 second of invincibility
-        if (lives <= 0) {
-          gameState = 'gameover';
-          return;
-        }
-        // Knock player back
-        player.vx = (player.x > e.x ? 6 : -6);
-        player.vy = -8;
-        // Remove enemy
-        enemies = enemies.filter(en => en !== e);
-        for (let i = 0; i < 10; i++) {
-          particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, color: '#ff6b6b' });
+        // Mario-style: jumping on top = kill enemy, no damage + bounce
+        let playerBottom = player.y + player.h/2;
+        let enemyTop = e.y - e.h/2;
+        if (player.vy > 0 && playerBottom - enemyTop < 16) {
+          // Stomp! Kill enemy, bounce up, no damage
+          enemies = enemies.filter(en => en !== e);
+          player.vy = -8; // bounce
+          for (let i = 0; i < 8; i++) {
+            particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4-2, color: '#ffe66d' });
+          }
+        } else {
+          // Side/front collision = damage
+          screenShake = 15;
+          lives--;
+          invincible = 60;
+          if (lives <= 0) {
+            gameState = 'gameover';
+            return;
+          }
+          player.vx = (player.x > e.x ? 6 : -6);
+          player.vy = -6;
+          enemies = enemies.filter(en => en !== e);
+          for (let i = 0; i < 10; i++) {
+            particles.push({ x: e.x, y: e.y, life: 15, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, color: '#ff6b6b' });
+          }
         }
         break;
       }
