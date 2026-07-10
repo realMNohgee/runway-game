@@ -24,8 +24,29 @@
     border: 2px solid #ff6b6b; padding: 6px 14px;
     font-family: 'Press Start 2P', monospace; font-size: 10px;
     cursor: pointer; z-index: 10; border-radius: 4px;
+    display: none;
   }
+  #skip.show { display: block; }
   #skip:hover { background: #ff6b6b; color: #fff; }
+
+  #portfolio-overlay {
+    display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: #0a0a1a; z-index: 20; padding: 20px 24px;
+    font-family: 'VT323', monospace; color: #2ecc71; font-size: 20px;
+    line-height: 1.5; overflow-y: auto;
+  }
+  #portfolio-overlay.show { display: block; }
+  #portfolio-overlay .header {
+    background: #333; color: #ccc; padding: 4px 12px; margin: -20px -24px 16px -24px;
+    font-size: 14px; display: flex; align-items: center; gap: 8px;
+  }
+  #portfolio-overlay .dot { width: 10px; height: 10px; border-radius: 50%; }
+  #portfolio-overlay .prompt { color: #4ecdc4; }
+  #portfolio-overlay .highlight { color: #ffe66d; }
+  #portfolio-overlay a { color: #3498db; text-decoration: underline; }
+  #portfolio-overlay a:hover { color: #5dade2; }
+  #portfolio-overlay .cursor { animation: blink 0.7s infinite; }
+  @keyframes blink { 0%,50% { opacity:1 } 51%,100% { opacity:0 } }
   #mobile-controls {
     display: none; position: absolute; bottom: 10px; left: 0; right: 0;
     justify-content: center; gap: 8px; z-index: 10;
@@ -53,6 +74,43 @@
     <button class="ctrl-btn" ontouchstart="keys.up=true" ontouchend="keys.up=false" onmousedown="keys.up=true" onmouseup="keys.up=false">▲</button>
     <button class="ctrl-btn" ontouchstart="keys.down=true" ontouchend="keys.down=false" onmousedown="keys.down=true" onmouseup="keys.down=false">▼</button>
     <button class="ctrl-btn" ontouchstart="keys.right=true" ontouchend="keys.right=false" onmousedown="keys.right=true" onmouseup="keys.right=false">▶</button>
+  </div>
+  <div id="portfolio-overlay">
+    <div class="header">
+      <div class="dot" style="background:#ff6b6b"></div>
+      <div class="dot" style="background:#f39c12"></div>
+      <div class="dot" style="background:#2ecc71"></div>
+      <span>portfolio — bash — 80×24</span>
+    </div>
+    <div><span class="prompt">$ whoami</span></div>
+    <div>Chris Lund — Builder. Carpenter. AI Developer.</div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$ ls ~/shipped/</span></div>
+    <div>60+ open-source CLI tools | 1 AI marketplace | 1 MCP server</div>
+    <div>Zero dependencies. Pure Python stdlib.</div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$ cat why-runway.md</span></div>
+    <div>I built <a href="https://hermtica.com" target="_blank">hermtica.com</a> — an AI agent marketplace on Vercel & Next.js.</div>
+    <div>I know CI/CD because I live it. 60 tools shipped in 2 weeks.</div>
+    <div>I debug pipelines at 3am. I read build logs for fun.</div>
+    <div>I want to help Runway make mobile releases boring.</div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$ cat experience.txt</span></div>
+    <div><span class="highlight">▸</span> Self-taught developer (JS/TS/Python — Next.js, React, Node)</div>
+    <div><span class="highlight">▸</span> Built & shipped: <a href="https://hermtica.com" target="_blank">hermtica.com</a>, <a href="https://repcheck-mu.vercel.app" target="_blank">repcheck-mu.vercel.app</a></div>
+    <div><span class="highlight">▸</span> Carpentry foreman → construction-tech domain expert</div>
+    <div><span class="highlight">▸</span> Restaurant manager → hospitality-tech domain expert</div>
+    <div><span class="highlight">▸</span> Pursuing CompTIA Security+ (exam ready in 8 weeks)</div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$ echo "See my work."</span></div>
+    <div><span class="highlight">▸</span> <a href="https://github.com/realMNohgee" target="_blank">github.com/realMNohgee</a></div>
+    <div><span class="highlight">▸</span> <a href="https://legionslab.com" target="_blank">legionslab.com</a></div>
+    <div><span class="highlight">▸</span> <a href="https://hermtica.com" target="_blank">hermtica.com</a></div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$ echo "Let's talk."</span></div>
+    <div>chris@hermtica.com | gabriel@runway.team</div>
+    <div>&nbsp;</div>
+    <div><span class="prompt">$</span> <span class="cursor">█</span></div>
   </div>
 </div>
 
@@ -331,6 +389,8 @@ function update() {
           screenShake = 15;
           lives--;
           invincible = 60;
+          // Show skip button after first death
+          skipBtn.classList.add('show');
           if (lives <= 0) {
             gameState = 'gameover';
             return;
@@ -363,7 +423,11 @@ function draw() {
   ctx.clearRect(0, 0, W, H);
 
   if (gameState === 'title') return drawTitle();
-  if (gameState === 'portfolio') return drawPortfolio();
+  if (gameState === 'portfolio') {
+    document.getElementById('portfolio-overlay').classList.add('show');
+    return;
+  }
+  document.getElementById('portfolio-overlay').classList.remove('show');
   if (gameState === 'win') return drawWin();
   if (gameState === 'gameover') return drawGameOver();
 
@@ -489,70 +553,9 @@ function drawWin() {
   ctx.textAlign = 'start';
 }
 
-// ── Portfolio Terminal ──
+// ── Portfolio Terminal (HTML overlay) ──
 function drawPortfolio() {
-  ctx.fillStyle = '#0a0a1a';
-  ctx.fillRect(0, 0, W, H);
-
-  // Terminal header
-  ctx.fillStyle = '#333';
-  ctx.fillRect(0, 0, W, 28);
-  ctx.fillStyle = '#ff6b6b';
-  ctx.beginPath(); ctx.arc(20, 14, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#f39c12';
-  ctx.beginPath(); ctx.arc(40, 14, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#2ecc71';
-  ctx.beginPath(); ctx.arc(60, 14, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#ccc';
-  ctx.font = '12px "VT323", monospace';
-  ctx.fillText('portfolio — bash — 80×24', 80, 20);
-
-  // Typewriter text
-  let lines = [
-    '$ whoami',
-    'Chris Lund — Builder. Carpenter. AI Developer.',
-    '',
-    '$ ls ~/shipped/',
-    '60+ open-source CLI tools | 1 AI marketplace | 1 MCP server',
-    'Zero dependencies. Pure Python stdlib.',
-    '',
-    '$ cat why-runway.md',
-    'I built Hermtica — an AI agent marketplace — on your competitors stack.',
-    'I know CI/CD because I live it. 60 tools shipped in 2 weeks.',
-    'I debug pipelines at 3am. I read build logs for fun.',
-    'I want to help Runway make mobile releases boring.',
-    '',
-    '$ cat experience.txt',
-    '▸ Self-taught developer (JS/TS/Python — Next.js, React, Node)',
-    '▸ Built & shipped: hermtica.com, repcheck-mu.vercel.app',
-    '▸ Carpentry foreman → construction-tech domain expert',
-    '▸ Restaurant manager → hospitality-tech domain expert',
-    '▸ Pursuing CompTIA Security+ (exam ready in 8 weeks)',
-    '',
-    '$ echo "Let\'s talk."',
-    'github.com/realMNohgee | hermtica.com',
-    'chris@hermtica.com',
-    '',
-    '█'
-  ];
-
-  ctx.fillStyle = '#2ecc71';
-  ctx.font = '15px "VT323", monospace';
-  let startY = 40;
-  for (let i = 0; i < lines.length; i++) {
-    let y = startY + i * 20;
-    if (y > H-10) break;
-    if (lines[i].startsWith('$')) ctx.fillStyle = '#4ecdc4';
-    else if (lines[i].startsWith('▸')) ctx.fillStyle = '#ffe66d';
-    else if (lines[i] === '█') {
-      let blink = frameCount % 60 < 30;
-      ctx.fillStyle = '#2ecc71';
-      if (blink) ctx.fillText('█', 2, y);
-      continue;
-    }
-    else ctx.fillStyle = '#2ecc71';
-    ctx.fillText(lines[i], 8, y);
-  }
+  document.getElementById('portfolio-overlay').classList.add('show');
 }
 
 // ── Game Over ──
